@@ -1,0 +1,1 @@
+{% extends 'base.html' %}{% block content %}<section class="card auth"><p class="eyebrow">오류 {{ code }}</p><h1>잠시 확인해 주세요</h1><p>{{ message }}</p><a class="button" href="{{ url_for('comments') }}">게시판으로</a></section>{% endblock %}
