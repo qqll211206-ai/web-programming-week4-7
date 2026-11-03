@@ -1,0 +1,20 @@
+// Local HTTP server on port 8767 and Chrome DevTools on port 9224 required.
+const assert=require('node:assert/strict');
+(async()=>{
+ const target=await (await fetch('http://127.0.0.1:9224/json/new?'+encodeURIComponent('http://127.0.0.1:8767/'),{method:'PUT'})).json();
+ const ws=new WebSocket(target.webSocketDebuggerUrl);await new Promise((res,rej)=>{ws.onopen=res;ws.onerror=rej});
+ let id=0;const pending=new Map(),errors=[];ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(Error(JSON.stringify(m.error))):p.resolve(m.result)}else if(m.method==='Runtime.exceptionThrown')errors.push(m.params.exceptionDetails.text);else if(m.method==='Runtime.consoleAPICalled'&&m.params.type==='error')errors.push('console.error')};
+ const send=(method,params={})=>new Promise((resolve,reject)=>{const n=++id;pending.set(n,{resolve,reject});ws.send(JSON.stringify({id:n,method,params}))});
+ const evalJs=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value};
+ await send('Runtime.enable');await send('Page.enable');await send('Emulation.setDeviceMetricsOverride',{width:375,height:800,deviceScaleFactor:1,mobile:true});
+ for(let i=0;i<50;i++){if(await evalJs("document.readyState==='complete' && !!document.querySelector('#fetch-button')"))break;await new Promise(r=>setTimeout(r,100))}
+ const rows=await evalJs(`(async()=>{const rows=[];for(const [w,h] of [[400,300],[2400,1800]]){const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;const c=canvas.getContext('2d');const g=c.createLinearGradient(0,0,w,h);g.addColorStop(0,'#253b80');g.addColorStop(1,'#fbc86a');c.fillStyle=g;c.fillRect(0,0,w,h);for(let x=0;x<w;x+=50){c.fillStyle=x%100?'#a93847':'#24705e';c.fillRect(x,0,25,h)}const blob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',0.9));for(const kernel of [3,31]){const form=new FormData();form.append('image',blob,'generated.jpg');form.append('operation','blur');form.append('kernel',kernel);const t=performance.now();const res=await fetch('/api/process',{method:'POST',body:form});const out=await res.blob();const rtt=performance.now()-t;if(!res.ok)throw Error('HTTP '+res.status);const bitmap=await createImageBitmap(out);rows.push({input:w+'x'+h,kernel,output:bitmap.width+'x'+bitmap.height,compute:res.headers.get('X-Compute-Ms'),server:res.headers.get('X-Processing-Ms'),roundtrip:rtt.toFixed(1)});bitmap.close()}}return rows})()`);
+ console.log(JSON.stringify(rows,null,2));assert.equal(rows.length,4);assert.equal(rows[2].output,'1600x1200');
+ await evalJs(`(async()=>{const c=document.createElement('canvas');c.width=64;c.height=64;const blob=await new Promise(r=>c.toBlob(r,'image/png'));const dt=new DataTransfer();dt.items.add(new File([blob],'test.png',{type:'image/png'}));const input=document.querySelector('[name=image]');input.files=dt.files;input.dispatchEvent(new Event('change'));document.querySelector('#fetch-button').click()})()`);
+ for(let i=0;i<100;i++){if(await evalJs("document.querySelector('#status').textContent.includes('완료')"))break;await new Promise(r=>setTimeout(r,50))}
+ assert.equal(await evalJs("!document.querySelector('#result').hidden"),true);assert.equal(await evalJs("!document.querySelector('#fetch-button').disabled"),true);assert.equal(await evalJs("document.documentElement.scrollWidth<=innerWidth"),true);assert.deepEqual(errors,[]);console.log('PASS fetch UI, displayed result, button reset, 375px layout, JS exceptions');
+ await evalJs("document.querySelector('#image-form').requestSubmit()");
+ for(let i=0;i<100;i++){await new Promise(r=>setTimeout(r,50));try{if(await evalJs("document.contentType==='image/png'"))break}catch{}}
+ assert.equal(await evalJs("document.contentType"),'image/png');console.log('PASS normal form POST navigates to PNG response');
+ await send('Page.close');ws.close();
+})().catch(e=>{console.error(e);process.exitCode=1});
