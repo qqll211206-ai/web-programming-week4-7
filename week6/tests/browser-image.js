@@ -13,8 +13,16 @@ const assert=require('node:assert/strict');
  await evalJs(`(async()=>{const c=document.createElement('canvas');c.width=64;c.height=64;const blob=await new Promise(r=>c.toBlob(r,'image/png'));const dt=new DataTransfer();dt.items.add(new File([blob],'test.png',{type:'image/png'}));const input=document.querySelector('[name=image]');input.files=dt.files;input.dispatchEvent(new Event('change'));document.querySelector('#fetch-button').click()})()`);
  for(let i=0;i<100;i++){if(await evalJs("document.querySelector('#status').textContent.includes('완료')"))break;await new Promise(r=>setTimeout(r,50))}
  assert.equal(await evalJs("!document.querySelector('#result').hidden"),true);assert.equal(await evalJs("!document.querySelector('#fetch-button').disabled"),true);assert.equal(await evalJs("document.documentElement.scrollWidth<=innerWidth"),true);assert.deepEqual(errors,[]);console.log('PASS fetch UI, displayed result, button reset, 375px layout, JS exceptions');
+ assert.equal(await evalJs("document.querySelector('#original').complete && document.querySelector('#original').naturalWidth>0 && document.querySelector('#result').complete && document.querySelector('#result').naturalWidth>0"),true);
+ assert.equal(await evalJs("document.querySelector('#times').textContent.includes('64 × 64')"),true);
+ await evalJs(`(()=>{const d=new DataTransfer();d.items.add(new File(['invalid'],'fake.jpg',{type:'image/jpeg'}));const i=document.querySelector('[name=image]');i.files=d.files;i.dispatchEvent(new Event('change'));document.querySelector('#fetch-button').click()})()`);
+ for(let i=0;i<100;i++){if(await evalJs("document.querySelector('#status').textContent.includes('올바른')"))break;await new Promise(r=>setTimeout(r,50))}
+ assert.equal(await evalJs("document.querySelector('#status').textContent.includes('올바른')"),true);assert.equal(await evalJs("document.querySelector('#result').hidden"),true);console.log('PASS fetch invalid image displays inline error');
  await evalJs("document.querySelector('#image-form').requestSubmit()");
+ for(let i=0;i<100;i++){await new Promise(r=>setTimeout(r,50));try{if(await evalJs("document.contentType==='text/html' && document.querySelector('#status')?.textContent.includes('올바른')"))break}catch{}}
+ assert.equal(await evalJs("document.contentType"),'text/html');assert.equal(await evalJs("document.querySelector('#status').textContent.includes('올바른')"),true);console.log('PASS native form error renders in the page');
+ await evalJs(`(async()=>{const c=document.createElement('canvas');c.width=64;c.height=64;const blob=await new Promise(r=>c.toBlob(r,'image/png'));const dt=new DataTransfer();dt.items.add(new File([blob],'test.png',{type:'image/png'}));const input=document.querySelector('[name=image]');input.files=dt.files;input.dispatchEvent(new Event('change'));document.querySelector('#image-form').requestSubmit()})()`);
  for(let i=0;i<100;i++){await new Promise(r=>setTimeout(r,50));try{if(await evalJs("document.contentType==='image/png'"))break}catch{}}
- assert.equal(await evalJs("document.contentType"),'image/png');console.log('PASS normal form POST navigates to PNG response');
+ assert.equal(await evalJs("document.contentType"),'image/png');console.log('PASS native form success returns PNG');
  await send('Page.close');ws.close();
 })().catch(e=>{console.error(e);process.exitCode=1});
